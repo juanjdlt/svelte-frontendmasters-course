@@ -1,7 +1,9 @@
 <script>
   import {createEventDispatcher} from 'svelte';
   import Card from './../components/Card.svelte';
-  import { sleep, pick_random } from './../utils';
+  import {fly, crossfade, scale} from 'svelte/transition';
+  import * as eases from 'svelte/easing';
+  import { sleep, pick_random, load_image } from './../utils';
 
   export let selection;
 
@@ -10,6 +12,7 @@
   let i = 0;
   let last_result;
   let done = false;
+  let ready = true;
 
   $: score = results.filter(x => x === 'right').length;
   
@@ -22,11 +25,17 @@
   }
   const results = Array(selection.length);
   
+  const [send, receive] = crossfade({
+    easing: eases.cubicInOut,
+    duration: 300
+  });
   const load_details = async (celebrity) => {
     const rest = await fetch(
       `https://cameo-explorer.netlify.app/celebs/${celebrity.id}.json`
     );
-    return await rest.json();
+    const details = await rest.json();
+    await load_image(details.image);
+    return details;
   };
 
   const promises = selection.map((round) =>
@@ -38,10 +47,12 @@
     ? 'right'
     : 'wrong';
 
-    await sleep(1500);
+    await sleep(1500); // sleep nin order to see the big icon
 
     results[i] = last_result;
     last_result = null;
+
+    await sleep(500); //sleep in order to see the crosfade transition
 
     if (i < selection.length -1) {
       i += 1;
@@ -60,14 +71,20 @@
 
 <div class="game-container">
   {#if (done)}
-    <div class="done">
+    <div class="done" in:scale={{delay:200, duration:800, easing:eases.elasticOut }}>
       <strong>{score}/{results.length}</strong>
       <p>{pick_message(score / results.length)}</p>
       <button on:click={() => dispatch('restart')}>Back to the main screen</button>
     </div>
-  {:else}
+  {:else if ready}
     {#await promises[i] then [a, b]}
-      <div class="game">
+      <div 
+        class="game" 
+        in:fly={{duration: 200, y: 20}}
+        out:fly={{duration: 200, y: -20}}
+        on:outrostart={() => ready = false}
+        on:outroend={() => ready = true}
+      >
         <div class="card-container">
           <Card 
             celeb={a}
@@ -95,14 +112,23 @@
 </div>
 
 {#if last_result}
-  <img class="giant-result" alt="{last_result} answer" src="/icons/{last_result}.svg" /> 
+  <img 
+    class="giant-result" 
+    alt="{last_result} answer" 
+    src="/icons/{last_result}.svg" 
+    in:fly={{x: 100, duration: 200}} 
+    out:send={{key: i}}
+  /> 
 {/if}
 
 <div class="results" style="grid-template-columns: repeat({results.length}, 1fr);">
-  {#each results as result}
+  {#each results as result, i}
     <span class="result">
       {#if result}
-        <img alt="{result} answer" src="/icons/{result}.svg" /> 
+        <img 
+          in:receive={{key: i}}
+          alt="{result} answer"  
+          src="/icons/{result}.svg" /> 
       {/if}
     </span>
   {/each}
